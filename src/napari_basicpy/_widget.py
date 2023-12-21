@@ -109,7 +109,10 @@ class BasicWidget(QWidget):
             "resize_params",
             "reweighting_tol",
             "rho",
+            "smoothness_darkfield",
+            "smoothness_flatfield",
             "sort_intensity",
+            "sparse_cost_darkfield",
             "varying_coeff",
             "working_size",
             # "get_darkfield",
@@ -208,7 +211,6 @@ class BasicWidget(QWidget):
         return {k: v.value for k, v in self._settings.items()}
 
     def _run(self):
-
         # TODO visualization (on button?) to represent that program is running
         # disable run button
         self.run_btn.setDisabled(True)
