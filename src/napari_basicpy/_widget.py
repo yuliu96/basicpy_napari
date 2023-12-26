@@ -1,11 +1,11 @@
 import enum
 import logging
-import pkg_resources
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 import numpy as np
+import pkg_resources
 from basicpy import BaSiC
 from magicgui.widgets import create_widget
 from napari.qt import thread_worker
@@ -69,7 +69,7 @@ class BasicWidget(QWidget):
         tb_doc_reference = QLabel()
         tb_doc_reference.setOpenExternalLinks(True)
         tb_doc_reference.setText(
-            '<a href="https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC">'
+            '<a href="https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC">'  # noqa: E501
             "See docs for settings details</a>"
         )
         self.layout().addWidget(tb_doc_reference)
@@ -220,7 +220,6 @@ class BasicWidget(QWidget):
         def update_layer(update):
             # data, flatfield, darkfield, baseline, meta = update
             data, flatfield, darkfield, meta = update
-            print(f"corrected shape: {data.shape}")
             self.viewer.add_image(data, **meta)
             self.viewer.add_image(flatfield)
             if self._settings["get_darkfield"].value:
