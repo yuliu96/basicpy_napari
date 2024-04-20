@@ -119,14 +119,23 @@ class BasicWidget(QWidget):
         ]
 
         def build_widget(k):
-            field = BaSiC.__fields__[k]
+
+            # Check if pydantic major version is 2
+            if pkg_resources.get_distribution("pydantic").version.split(".")[0] == "2":
+                field = BaSiC.model_fields[k]
+                description = field.description
+            else:
+                # Assume pydantic version 1
+                field = BaSiC.__fields__[k]
+                description = field.field_info.description
+
             default = field.default
-            description = field.field_info.description
-            type_ = field.type_
+            annotation = field.annotation
+
             try:
-                if issubclass(type_, enum.Enum):
+                if issubclass(annotation, enum.Enum):
                     try:
-                        default = type_[default]
+                        default = annotation[default]
                     except KeyError:
                         default = default
             except TypeError:
@@ -142,7 +151,7 @@ class BasicWidget(QWidget):
             else:
                 widget = create_widget(
                     value=default,
-                    annotation=type_,
+                    annotation=annotation,
                     options={"tooltip": description},
                 )
 
