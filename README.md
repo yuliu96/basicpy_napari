@@ -39,6 +39,10 @@ To install latest development version :
 
     pip install git+https://github.com/tdmorello/napari-basicpy.git
 
+## Usage
+
+This plugin expects a stack of tiles as input. Mosaic images should be deconstructed into their tiled components for BaSiCPy. Individual tiles should be two-dimensional.
+
 ## Contributing
 
 Contributions are very welcome. Tests can be run with [tox], please ensure
