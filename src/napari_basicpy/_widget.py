@@ -1,3 +1,9 @@
+"""
+TODO
+[ ] Add Autosegment feature when checkbox is marked
+[ ] Add text instructions to "Hover input field for tooltip"
+"""
+
 import enum
 import logging
 from functools import partial
@@ -90,6 +96,8 @@ class BasicWidget(QWidget):
         ]
 
         advanced = [
+            "autosegment",
+            "autosegment_margin",
             "epsilon",
             "estimation_mode",
             "fitting_mode",
@@ -303,17 +311,22 @@ class BasicWidget(QWidget):
     def build_header(self):
         """Build a header."""
 
-        logo_path = Path(__file__).parent / "_icons/logo.png"
-        logo_pm = QPixmap(str(logo_path.absolute()))
-        logo_lbl = QLabel()
-        logo_lbl.setPixmap(logo_pm)
-        logo_lbl.setAlignment(Qt.AlignCenter)
+        header = QWidget()
+        header.setLayout(QVBoxLayout())
+
+        # show/hide logo
+        show_logo = False
+        if show_logo:
+            logo_path = Path(__file__).parent / "_icons/logo.png"
+            logo_pm = QPixmap(str(logo_path.absolute()))
+            logo_lbl = QLabel()
+            logo_lbl.setPixmap(logo_pm)
+            logo_lbl.setAlignment(Qt.AlignCenter)
+            header.layout().addWidget(logo_lbl)
+
         lbl = QLabel(f"<b>BaSiC Shading Correction</b> v{BASICPY_VERSION}")
         lbl.setAlignment(Qt.AlignCenter)
 
-        header = QWidget()
-        header.setLayout(QVBoxLayout())
-        header.layout().addWidget(logo_lbl)
         header.layout().addWidget(lbl)
 
         return header
