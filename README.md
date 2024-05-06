@@ -7,41 +7,62 @@
 [![codecov](https://codecov.io/gh/tdmorello/napari-basicpy/branch/main/graph/badge.svg)](https://codecov.io/gh/tdmorello/napari-basicpy)
 [![napari hub](https://img.shields.io/endpoint?url=https://api.napari-hub.org/shields/napari-basicpy)](https://napari-hub.org/plugins/napari-basicpy)
 
-BaSiCPy illumination correction for napari
+BaSiCPy illumination correction for [napari]
 
-Example:
+## Example
 
 ![example](resources/example.gif)
 
 ----------------------------------
 
-This [napari] plugin was generated with [Cookiecutter] using [@napari]'s [cookiecutter-napari-plugin] template.
-
-<!--
-Don't miss the full getting started guide to set up your new package:
-https://github.com/napari/cookiecutter-napari-plugin#getting-started
-
-and review the napari docs for plugin developers:
-https://napari.org/plugins/stable/index.html
--->
-
 ## Installation
 
-**Important note** M1/M2 mac and Windows users may need to install the `jax` and `jaxlib` following the instruction [here](https://github.com/peng-lab/BaSiCPy#installation).
+### Recommended Installation Method
 
-You can install `napari-basicpy` via [pip]:
+We highly recommend using a `conda` virtual environment to install and operate this plugin.
+
+To use Python 3.9, for example:
+
+    conda create -n basicpy -c conda-forge python=3.9 napari pyqt && \
+    conda activate basicpy && \
+    pip install napari-basicpy
+
+For further instructions on installing `napari`, visit their [install guide](https://napari.org/stable/tutorials/fundamentals/installation).
+
+---
+
+**IMPORTANT NOTE FOR APPLE SILICON AND WINDOWS USERS:**
+
+If the above instructions fail with Apple silicon (e.g., M1/M2 chip) or Windows, you may need to install the `jax` and `jaxlib` following the instruction [here](https://github.com/peng-lab/BaSiCPy#installation).
+
+---
+
+### Other Installation Methods
+
+You can also install `napari-basicpy` via [pip]:
 
     pip install napari-basicpy
 
 
+To install latest development version:
 
-To install latest development version :
+    pip install git+https://github.com/peng-lab/napari-basicpy.git
+
+or
 
     pip install git+https://github.com/tdmorello/napari-basicpy.git
 
 ## Usage
 
-This plugin expects a stack of tiles as input. Mosaic images should be deconstructed into their tiled components for BaSiCPy. Individual tiles should be two-dimensional.
+### General Usage
+
+This plugin expects a stack of tiles as input. Mosaic images should be deconstructed into their tiled components before processing. Individual tiles should be two-dimensional.
+
+There are many options to customize the performance of BaSiCPy. Please refer to the BaSiCPy documentation on parameters [here](https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC) for details.
+
+### Batch Processing
+
+Coming soon...
 
 ## Contributing
 
@@ -55,7 +76,7 @@ Distributed under the terms of the [BSD-3] license,
 
 ## Issues
 
-If you encounter any problems, please [file an issue] along with a detailed description.
+If you encounter any problems, please [file an issue](https://github.com/peng-lab/napari-basicpy/issues) along with a detailed description.
 
 [napari]: https://github.com/napari/napari
 [Cookiecutter]: https://github.com/audreyr/cookiecutter
@@ -68,7 +89,6 @@ If you encounter any problems, please [file an issue] along with a detailed desc
 [Mozilla Public License 2.0]: https://www.mozilla.org/media/MPL/2.0/index.txt
 [cookiecutter-napari-plugin]: https://github.com/napari/cookiecutter-napari-plugin
 
-[file an issue]: https://github.com/tdmorello/napari-basicpy/issues
 
 [napari]: https://github.com/napari/napari
 [tox]: https://tox.readthedocs.io/en/latest/
