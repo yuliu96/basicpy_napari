@@ -32,6 +32,8 @@ from qtpy.QtWidgets import (
 if TYPE_CHECKING:
     import napari  # pragma: no cover
 
+SHOW_LOGO = False  # Show or hide the BaSiC logo in the widget
+
 logger = logging.getLogger(__name__)
 
 BASICPY_VERSION = pkg_resources.get_distribution("BaSiCPy").version
@@ -235,6 +237,7 @@ class BasicWidget(QWidget):
         data, meta, _ = self.layer_select.value.as_layer_data_tuple()
 
         def update_layer(update):
+            logger.info("`update_layer` was called!")
             # data, flatfield, darkfield, baseline, meta = update
             data, flatfield, darkfield, meta = update
             self.viewer.add_image(data, **meta)
@@ -270,7 +273,11 @@ class BasicWidget(QWidget):
             # reenable run button
             # TODO also reenable when error occurs
             self.run_btn.setDisabled(False)
-
+            logger.info(
+                f"BaSiC returned `corrected` {corrected.shape}, "
+                f"`flatfield` {flatfield.shape}, and "
+                f"`darkfield` {darkfield.shape}."
+            )
             return corrected, flatfield, darkfield, meta
 
         # TODO trigger error when BaSiC fails, re-enable "run" button
@@ -279,6 +286,7 @@ class BasicWidget(QWidget):
         worker.finished.connect(self.cancel_btn.clicked.disconnect)
         worker.errored.connect(lambda: self.run_btn.setDisabled(False))
         worker.start()
+        logger.info("Worker started")
         return worker
 
     def _cancel(self, worker):
@@ -315,8 +323,7 @@ class BasicWidget(QWidget):
         header.setLayout(QVBoxLayout())
 
         # show/hide logo
-        show_logo = False
-        if show_logo:
+        if SHOW_LOGO:
             logo_path = Path(__file__).parent / "_icons/logo.png"
             logo_pm = QPixmap(str(logo_path.absolute()))
             logo_lbl = QLabel()
