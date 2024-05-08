@@ -6,11 +6,14 @@ build-backend = "setuptools.build_meta"
 write_to = "src/napari_basicpy/_version.py"
 
 [tool.isort]
-"line_length" = 88
+"line_length" = 120
 "profile" = "black"
 
 [tool.black]
-"line_length" = 88
+"line_length" = 120
+
+[tool.ruff]
+line-length = 120
 
 [tool.pytest.ini_options]
 log_cli = true
