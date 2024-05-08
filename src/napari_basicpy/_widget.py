@@ -9,9 +9,9 @@ import logging
 from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
+import importlib.metadata
 
 import numpy as np
-import pkg_resources
 from basicpy import BaSiC
 from magicgui.widgets import create_widget
 from napari.qt import thread_worker
@@ -36,7 +36,7 @@ SHOW_LOGO = False  # Show or hide the BaSiC logo in the widget
 
 logger = logging.getLogger(__name__)
 
-BASICPY_VERSION = pkg_resources.get_distribution("BaSiCPy").version
+BASICPY_VERSION = importlib.metadata.version("BaSiCPy")
 
 
 class BasicWidget(QWidget):
@@ -47,182 +47,162 @@ class BasicWidget(QWidget):
         super().__init__()
 
         self.viewer = viewer
-        self.setLayout(QVBoxLayout())
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
 
-        layer_select_layout = QFormLayout()
-        layer_select_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-        self.layer_select = create_widget(
-            annotation="napari.layers.Layer", label="layer_select"
-        )
-        layer_select_layout.addRow("layer", self.layer_select.native)
-        layer_select_container = QWidget()
-        layer_select_container.setLayout(layer_select_layout)
+        # Define builder functions
+        def build_header_container():
+            """Build the widget header."""
+            header_container = QWidget()
+            header_layout = QVBoxLayout()
+            header_container.setLayout(header_layout)
+            # show/hide logo
+            if SHOW_LOGO:
+                logo_path = str((Path(__file__).parent / "_icons/logo.png").absolute())
+                logo_pm = QPixmap(logo_path)
+                logo_lbl = QLabel()
+                logo_lbl.setPixmap(logo_pm)
+                logo_lbl.setAlignment(Qt.AlignCenter)
+                header_layout.addWidget(logo_lbl)
+            # Show label and package version of BaSiCPy
+            lbl = QLabel(f"<b>BaSiC Shading Correction</b> v{BASICPY_VERSION}")
+            lbl.setAlignment(Qt.AlignCenter)
+            header_layout.addWidget(lbl)
 
-        simple_settings, advanced_settings = self._build_settings_containers()
-        self.advanced_settings = advanced_settings
+            return header_container
 
-        self.run_btn = QPushButton("Run")
-        self.run_btn.clicked.connect(self._run)
-        self.cancel_btn = QPushButton("Cancel")
+        # Layer select should be accessible by BaSiC to access currently layer
+        self.layer_select = create_widget(annotation="napari.layers.Layer", label="layer_select")
 
-        # header
-        header = self.build_header()
-        self.layout().addWidget(header)
+        def build_layer_select_container():
+            layer_select_container = QWidget()
+            layer_select_layout = QFormLayout()
+            layer_select_container.setLayout(layer_select_layout)
+            layer_select_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            layer_select_layout.addRow("layer", self.layer_select.native)
+            return layer_select_container
 
-        self.layout().addWidget(layer_select_container)
-        self.layout().addWidget(simple_settings)
+        def build_toggle_advanced_settings_cb():
+            toggle_advanced_settings_cb = QCheckBox("Show Advanced Settings")
+            return toggle_advanced_settings_cb
 
-        # toggle advanced settings visibility
-        self.toggle_advanced_cb = QCheckBox("Show Advanced Settings")
-        tb_doc_reference = QLabel()
-        tb_doc_reference.setOpenExternalLinks(True)
-        tb_doc_reference.setText(
-            '<a href="https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC">'  # noqa: E501
-            "See docs for settings details</a>"
-        )
-        self.layout().addWidget(tb_doc_reference)
+        def build_doc_reference_label():
+            doc_reference_label = QLabel()
+            doc_reference_label.setOpenExternalLinks(True)
+            doc_reference_label.setText(
+                '<a href="https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC">'
+                "See docs for settings details</a>"
+            )
+            return doc_reference_label
 
-        self.layout().addWidget(self.toggle_advanced_cb)
-        self.toggle_advanced_cb.stateChanged.connect(self.toggle_advanced_settings)
+        def build_settings_containers():
+            skip = ["resize_mode", "resize_params", "working_size"]
+            simple_settings = ["get_darkfield"]
 
-        self.advanced_settings.setVisible(False)
-        self.layout().addWidget(advanced_settings)
-        self.layout().addWidget(self.run_btn)
-        self.layout().addWidget(self.cancel_btn)
-
-    def _build_settings_containers(self):
-        skip = [
-            "resize_mode",
-            "resize_params",
-            "working_size",
-        ]
-
-        advanced = [
-            "autosegment",
-            "autosegment_margin",
-            "epsilon",
-            "estimation_mode",
-            "fitting_mode",
-            "lambda_darkfield_coef",
-            "lambda_darkfield_sparse_coef",
-            "lambda_darkfield",
-            "lambda_flatfield_coef",
-            "lambda_flatfield",
-            "max_iterations",
-            "max_mu_coef",
-            "max_reweight_iterations_baseline",
-            "max_reweight_iterations",
-            "mu_coef",
-            "optimization_tol_diff",
-            "optimization_tol",
-            "resize_mode",
-            "resize_params",
-            "reweighting_tol",
-            "rho",
-            "smoothness_darkfield",
-            "smoothness_flatfield",
-            "sort_intensity",
-            "sparse_cost_darkfield",
-            "varying_coeff",
-            "working_size",
-            # "get_darkfield",
-        ]
-
-        def build_widget(k):
-
-            # Check if pydantic major version is 2
-            if pkg_resources.get_distribution("pydantic").version.split(".")[0] == "2":
+            def build_widget(k):
                 field = BaSiC.model_fields[k]
                 description = field.description
+                default = field.default
+                annotation = field.annotation
+                # Handle enumerated settings
+                try:
+                    if issubclass(annotation, enum.Enum):
+                        try:
+                            default = annotation[default]
+                        except KeyError:
+                            default = default
+                except TypeError:
+                    pass
+                # Define when to use scientific notation spinbox based on default value
+                if (type(default) == float or type(default) == int) and (default < 0.01 or default > 999):
+                    widget = ScientificDoubleSpinBox()
+                    widget.native.setValue(default)
+                    widget.native.adjustSize()
+                else:
+                    widget = create_widget(
+                        value=default,
+                        annotation=annotation,
+                        options={"tooltip": description},
+                    )
+                widget.native.setMinimumWidth(150)
+                return widget
+
+            # All settings here will be used to initialize BaSiC
+            self._settings = {k: build_widget(k) for k in BaSiC().settings.keys() if k not in skip}
+            self._extrasettings = dict()
+            self._extrasettings["get_timelapse"] = create_widget(
+                value=False,
+                options={"tooltip": "Output timelapse correction with corrected image"},
+            )
+
+            # build simple settings container
+            simple_settings_gb = QGroupBox("Settings")  # make groupbox
+            simple_settings_gb.setLayout(QVBoxLayout())
+            simple_settings_form = QWidget()  # make form
+            simple_settings_form.setLayout(QFormLayout())
+            simple_settings_form.layout().setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            simple_settings_gb.layout().addWidget(simple_settings_form)  # add form to groupbox
+
+            # create advanaced settings groupbox
+            advanced_settings_gb = QGroupBox("Advanced Settings")  # make groupbox
+            advanced_settings_gb.setLayout(QVBoxLayout())
+            advanced_settings_form = QWidget()  # make form
+            advanced_settings_form.setLayout(QFormLayout())
+            advanced_settings_form.layout().setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+
+            # sort settings into either simple or advanced settings containers
+            for k, v in self._settings.items():
+                if k in simple_settings:
+                    simple_settings_form.layout().addRow(k, v.native)
+                else:
+                    advanced_settings_form.layout().addRow(k, v.native)
+
+            # add extra settings to simple settings container
+            for k, v in self._extrasettings.items():
+                simple_settings_form.layout().addRow(k, v.native)
+
+            # The scroll view is created after filling the list to make it the correct size
+            advanced_settings_scroll = QScrollArea()  # make scroll view
+            advanced_settings_scroll.setWidget(advanced_settings_form)  # apply scroll view to form
+            advanced_settings_gb.layout().addWidget(advanced_settings_scroll)  # add view to groupbox
+
+            return simple_settings_gb, advanced_settings_gb
+
+        # Build widget components
+        header_container = build_header_container()
+        layer_select_container = build_layer_select_container()
+        doc_reference_lbl = build_doc_reference_label()
+        (
+            simple_settings_container,
+            advanced_settings_container,
+        ) = build_settings_containers()
+        toggle_advanced_settings_cb = build_toggle_advanced_settings_cb()
+        self.run_btn = QPushButton("Run")
+        self.cancel_btn = QPushButton("Cancel")
+
+        # Add containers/widgets to layout
+        main_layout.addWidget(header_container)
+        main_layout.addWidget(layer_select_container)
+        main_layout.addWidget(doc_reference_lbl)
+        main_layout.addWidget(simple_settings_container)
+        main_layout.addWidget(toggle_advanced_settings_cb)
+        main_layout.addWidget(advanced_settings_container)
+        main_layout.addWidget(self.run_btn)
+        main_layout.addWidget(self.cancel_btn)
+
+        # Show/hide widget components
+        advanced_settings_container.setVisible(False)
+
+        # Connect actions
+        def toggle_advanced_settings():
+            """Toggle the advanced settings container."""
+            if toggle_advanced_settings_cb.isChecked():
+                advanced_settings_container.setHidden(False)
             else:
-                # Assume pydantic version 1
-                field = BaSiC.__fields__[k]
-                description = field.field_info.description
+                advanced_settings_container.setHidden(True)
 
-            default = field.default
-            annotation = field.annotation
-
-            try:
-                if issubclass(annotation, enum.Enum):
-                    try:
-                        default = annotation[default]
-                    except KeyError:
-                        default = default
-            except TypeError:
-                pass
-            # name = field.name
-
-            if (type(default) == float or type(default) == int) and (
-                default < 0.01 or default > 999
-            ):
-                widget = ScientificDoubleSpinBox()
-                widget.native.setValue(default)
-                widget.native.adjustSize()
-            else:
-                widget = create_widget(
-                    value=default,
-                    annotation=annotation,
-                    options={"tooltip": description},
-                )
-
-            widget.native.setMinimumWidth(150)
-            return widget
-
-        # all settings here will be used to initialize BaSiC
-        self._settings = {
-            k: build_widget(k)
-            for k in BaSiC().settings.keys()
-            # exclude settings
-            if k not in skip
-        }
-
-        self._extrasettings = dict()
-        # settings to display correction profiles
-        # options to show flatfield/darkfield profiles
-        # self._extrasettings["show_flatfield"] = create_widget(
-        #     value=True,
-        #     options={"tooltip": "Output flatfield profile with corrected image"},
-        # )
-        # self._extrasettings["show_darkfield"] = create_widget(
-        #     value=True,
-        #     options={"tooltip": "Output darkfield profile with corrected image"},
-        # )
-        self._extrasettings["get_timelapse"] = create_widget(
-            value=False,
-            options={"tooltip": "Output timelapse correction with corrected image"},
-        )
-
-        simple_settings_container = QGroupBox("Settings")
-        simple_settings_container.setLayout(QFormLayout())
-        simple_settings_container.layout().setFieldGrowthPolicy(
-            QFormLayout.AllNonFixedFieldsGrow
-        )
-
-        # this mess is to put scrollArea INSIDE groupBox
-        advanced_settings_list = QWidget()
-        advanced_settings_list.setLayout(QFormLayout())
-        advanced_settings_list.layout().setFieldGrowthPolicy(
-            QFormLayout.AllNonFixedFieldsGrow
-        )
-
-        for k, v in self._settings.items():
-            if k in advanced:
-                # advanced_settings_container.layout().addRow(k, v.native)
-                advanced_settings_list.layout().addRow(k, v.native)
-            else:
-                simple_settings_container.layout().addRow(k, v.native)
-
-        advanced_settings_scroll = QScrollArea()
-        advanced_settings_scroll.setWidget(advanced_settings_list)
-
-        advanced_settings_container = QGroupBox("Advanced Settings")
-        advanced_settings_container.setLayout(QVBoxLayout())
-        advanced_settings_container.layout().addWidget(advanced_settings_scroll)
-
-        for k, v in self._extrasettings.items():
-            simple_settings_container.layout().addRow(k, v.native)
-
-        return simple_settings_container, advanced_settings_container
+        self.run_btn.clicked.connect(self._run)
+        toggle_advanced_settings_cb.stateChanged.connect(toggle_advanced_settings)
 
     @property
     def settings(self):
@@ -230,63 +210,34 @@ class BasicWidget(QWidget):
         return {k: v.value for k, v in self._settings.items()}
 
     def _run(self):
-        # TODO visualization (on button?) to represent that program is running
         # disable run button
         self.run_btn.setDisabled(True)
-
+        # get layer information
         data, meta, _ = self.layer_select.value.as_layer_data_tuple()
 
+        # define function to update napari viewer
         def update_layer(update):
-            logger.info("`update_layer` was called!")
-            # data, flatfield, darkfield, baseline, meta = update
             data, flatfield, darkfield, meta = update
             self.viewer.add_image(data, **meta)
             self.viewer.add_image(flatfield)
             if self._settings["get_darkfield"].value:
                 self.viewer.add_image(darkfield)
-            # if self._extrasettings["get_timelapse"].value:
-            #     self.viewer.add_image(baseline)
 
-        @thread_worker(
-            start_thread=False,
-            # connect={"yielded": update_layer, "returned": update_layer},
-            connect={"returned": update_layer},
-        )
+        @thread_worker(start_thread=False, connect={"returned": update_layer})
         def call_basic(data):
-            # TODO log basic output to a QtTextEdit or in a new window
             basic = BaSiC(**self.settings)
-            logger.info(
-                "Calling `basic.fit_transform` with `get_timelapse="
-                f"{self._extrasettings['get_timelapse'].value}`"
-            )
-            corrected = basic.fit_transform(
-                data, timelapse=self._extrasettings["get_timelapse"].value
-            )
-
+            corrected = basic.fit_transform(data, timelapse=self._extrasettings["get_timelapse"].value)
             flatfield = basic.flatfield
             darkfield = basic.darkfield
-
-            if self._extrasettings["get_timelapse"]:
-                # flatfield = flatfield / basic.baseline
-                ...
-
-            # reenable run button
-            # TODO also reenable when error occurs
-            self.run_btn.setDisabled(False)
-            logger.info(
-                f"BaSiC returned `corrected` {corrected.shape}, "
-                f"`flatfield` {flatfield.shape}, and "
-                f"`darkfield` {darkfield.shape}."
-            )
+            self.run_btn.setDisabled(False)  # reenable run button
             return corrected, flatfield, darkfield, meta
 
-        # TODO trigger error when BaSiC fails, re-enable "run" button
         worker = call_basic(data)
         self.cancel_btn.clicked.connect(partial(self._cancel, worker=worker))
         worker.finished.connect(self.cancel_btn.clicked.disconnect)
         worker.errored.connect(lambda: self.run_btn.setDisabled(False))
         worker.start()
-        logger.info("Worker started")
+        logger.info("BaSiC worker started")
         return worker
 
     def _cancel(self, worker):
@@ -297,46 +248,16 @@ class BasicWidget(QWidget):
 
     def showEvent(self, event: QEvent) -> None:  # noqa: D102
         super().showEvent(event)
-        self.reset_choices()
+        self._reset_layer_choices()
 
-    def reset_choices(self, event: Optional[QEvent] = None) -> None:
-        """Repopulate image list."""  # noqa DAR101
+    def _reset_layer_choices(self, event: Optional[QEvent] = None) -> None:
+        """Repopulate image layer dropdown list."""  # noqa DAR101
         self.layer_select.reset_choices(event)
+        # If no layers are present, disable the 'run' button
         if len(self.layer_select) < 1:
             self.run_btn.setEnabled(False)
         else:
             self.run_btn.setEnabled(True)
-
-    def toggle_advanced_settings(self) -> None:
-        """Toggle the advanced settings container."""
-        # container = self.advanced_settings
-        container = self.advanced_settings
-        if self.toggle_advanced_cb.isChecked():
-            container.setHidden(False)
-        else:
-            container.setHidden(True)
-
-    def build_header(self):
-        """Build a header."""
-
-        header = QWidget()
-        header.setLayout(QVBoxLayout())
-
-        # show/hide logo
-        if SHOW_LOGO:
-            logo_path = Path(__file__).parent / "_icons/logo.png"
-            logo_pm = QPixmap(str(logo_path.absolute()))
-            logo_lbl = QLabel()
-            logo_lbl.setPixmap(logo_pm)
-            logo_lbl.setAlignment(Qt.AlignCenter)
-            header.layout().addWidget(logo_lbl)
-
-        lbl = QLabel(f"<b>BaSiC Shading Correction</b> v{BASICPY_VERSION}")
-        lbl.setAlignment(Qt.AlignCenter)
-
-        header.layout().addWidget(lbl)
-
-        return header
 
 
 class QScientificDoubleSpinBox(QDoubleSpinBox):
