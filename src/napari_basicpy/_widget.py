@@ -71,14 +71,13 @@ class BasicWidget(QWidget):
 
             return header_container
 
-        # Layer select should be accessible by BaSiC to access currently layer
-        self.layer_select = create_widget(annotation="napari.layers.Layer", label="layer_select")
-
         def build_layer_select_container():
             layer_select_container = QWidget()
             layer_select_layout = QFormLayout()
             layer_select_container.setLayout(layer_select_layout)
             layer_select_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+            # Layer select should be accessible by BaSiC to access currently layer
+            self.layer_select = create_widget(annotation="napari.layers.Layer", label="layer_select")
             layer_select_layout.addRow("layer", self.layer_select.native)
             return layer_select_container
 
@@ -248,9 +247,9 @@ class BasicWidget(QWidget):
 
     def showEvent(self, event: QEvent) -> None:  # noqa: D102
         super().showEvent(event)
-        self._reset_layer_choices()
+        self.reset_choices()
 
-    def _reset_layer_choices(self, event: Optional[QEvent] = None) -> None:
+    def reset_choices(self, event: Optional[QEvent] = None) -> None:
         """Repopulate image layer dropdown list."""  # noqa DAR101
         self.layer_select.reset_choices(event)
         # If no layers are present, disable the 'run' button
