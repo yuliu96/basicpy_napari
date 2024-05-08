@@ -60,10 +60,6 @@ This plugin expects a stack of tiles as input. Mosaic images should be deconstru
 
 There are many options to customize the performance of BaSiCPy. Please refer to the BaSiCPy documentation on parameters [here](https://basicpy.readthedocs.io/en/latest/api.html#basicpy.basicpy.BaSiC) for details.
 
-### Batch Processing
-
-Coming soon...
-
 ## Contributing
 
 Contributions are very welcome. Tests can be run with [tox], please ensure
