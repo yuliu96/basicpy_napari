@@ -76,7 +76,7 @@ class BasicWidget(QWidget):
             layer_select_layout = QFormLayout()
             layer_select_container.setLayout(layer_select_layout)
             layer_select_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-            # Layer select should be accessible by BaSiC to access currently layer
+            # Layer select should be accessible by BaSiC to access current layer
             self.layer_select = create_widget(annotation="napari.layers.Layer", label="layer_select")
             layer_select_layout.addRow("layer", self.layer_select.native)
             return layer_select_container
