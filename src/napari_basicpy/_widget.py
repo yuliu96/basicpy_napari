@@ -32,11 +32,16 @@ from qtpy.QtWidgets import (
 if TYPE_CHECKING:
     import napari  # pragma: no cover
 
-SHOW_LOGO = False  # Show or hide the BaSiC logo in the widget
+from magicgui.widgets import ComboBox
+from napari.layers import Image
+
+SHOW_LOGO = True  # Show or hide the BaSiC logo in the widget
 
 logger = logging.getLogger(__name__)
 
-BASICPY_VERSION = importlib.metadata.version("BaSiCPy")
+
+def bool_layers(wdg: ComboBox) -> list[Image]:
+    return [layer for layer in viewer.layers if isinstance(layer, Image)]
 
 
 class BasicWidget(QWidget):
@@ -65,7 +70,7 @@ class BasicWidget(QWidget):
                 logo_lbl.setAlignment(Qt.AlignCenter)
                 header_layout.addWidget(logo_lbl)
             # Show label and package version of BaSiCPy
-            lbl = QLabel(f"<b>BaSiC Shading Correction</b> v{BASICPY_VERSION}")
+            lbl = QLabel(f"<b>BaSiCPy Shading Correction</b>")
             lbl.setAlignment(Qt.AlignCenter)
             header_layout.addWidget(lbl)
 
@@ -77,8 +82,8 @@ class BasicWidget(QWidget):
             layer_select_container.setLayout(layer_select_layout)
             layer_select_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
             # Layer select should be accessible by BaSiC to access current layer
-            self.layer_select = create_widget(annotation="napari.layers.Layer", label="layer_select")
-            layer_select_layout.addRow("layer", self.layer_select.native)
+            self.layer_select = ComboBox(choices=bool_layers)
+            layer_select_layout.addRow(self.layer_select.native)
             return layer_select_container
 
         def build_toggle_advanced_settings_cb():
