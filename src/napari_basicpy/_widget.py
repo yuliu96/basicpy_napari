@@ -10,7 +10,7 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 import importlib.metadata
-
+import tifffile
 import numpy as np
 from basicpy import BaSiC
 from magicgui.widgets import create_widget
@@ -18,6 +18,7 @@ from napari.qt import thread_worker
 from qtpy.QtCore import QEvent, Qt
 from qtpy.QtGui import QDoubleValidator, QPixmap
 from qtpy.QtWidgets import (
+    QComboBox,
     QCheckBox,
     QDoubleSpinBox,
     QFormLayout,
@@ -31,6 +32,7 @@ from qtpy.QtWidgets import (
     QSlider,
     QSizePolicy,
     QLineEdit,
+    QDialog,
 )
 
 if TYPE_CHECKING:
@@ -38,75 +40,53 @@ if TYPE_CHECKING:
 
 from magicgui.widgets import ComboBox
 from napari.layers import Image
+import numpy as np
+import tifffile
+from qtpy.QtWidgets import QFileDialog
 
 SHOW_LOGO = True  # Show or hide the BaSiC logo in the widget
 
 logger = logging.getLogger(__name__)
 
 
-def build_general_settings_containers():
-    skip = ["resize_mode", "resize_params", "working_size"]
-    simple_settings = ["get_darkfield"]
+def save_dialog(parent, file_name):
+    """
+    Opens a dialog to select a location to save a file
 
-    def build_widget(k):
-        field = BaSiC.model_fields[k]
-        description = field.description
-        default = field.default
-        annotation = field.annotation
-        # Handle enumerated settings
-        try:
-            if issubclass(annotation, enum.Enum):
-                try:
-                    default = annotation[default]
-                except KeyError:
-                    default = default
-        except TypeError:
-            pass
-        # Define when to use scientific notation spinbox based on default value
-        if (type(default) == float or type(default) == int) and (default < 0.01 or default > 999):
-            widget = ScientificDoubleSpinBox()
-            widget.native.setValue(default)
-            widget.native.adjustSize()
-        else:
-            widget = create_widget(
-                value=default,
-                annotation=annotation,
-                options={"tooltip": description},
-            )
-        widget.native.setFixedWidth(150)
-        return widget
+    Parameters
+    ----------
+    parent : QWidget
+        Parent widget for the dialog
 
-    # All settings here will be used to initialize BaSiC
-    self._settings = {k: build_widget(k) for k in BaSiC().settings.keys() if k not in skip}
+    Returns
+    -------
+    str
+        Path of selected file
+    """
+    dialog = QFileDialog()
+    filepath, _ = dialog.getSaveFileName(
+        parent,
+        "Select location for {} to be saved".format(file_name),
+        "./{}.tif".format(file_name),
+        filter="TIFF files (*tif *.tiff)",
+    )
+    if not (filepath.endswith(".tiff") or filepath.endswith(".tif")):
+        filepath += ".tiff"
+    return filepath
 
-    # build simple settings container
-    simple_settings_gb = QGroupBox("Parameters")  # make groupbox
-    simple_settings_gb.setLayout(QVBoxLayout())
-    simple_settings_form = QWidget()  # make form
-    simple_settings_form.setLayout(QFormLayout())
-    simple_settings_form.layout().setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
-    simple_settings_gb.layout().addWidget(simple_settings_form)  # add form to groupbox
-    simple_settings_gb.setAlignment(Qt.AlignTop)
-    # create advanaced settings groupbox
-    advanced_settings_gb = QGroupBox("Advanced Settings")  # make groupbox
-    advanced_settings_gb.setLayout(QVBoxLayout())
-    advanced_settings_form = QWidget()  # make form
-    advanced_settings_form.setLayout(QFormLayout())
-    advanced_settings_form.layout().setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
 
-    # sort settings into either simple or advanced settings containers
-    for k, v in self._settings.items():
-        if k in simple_settings:
-            simple_settings_form.layout().addRow(k, v.native)
-        else:
-            advanced_settings_form.layout().addRow(k, v.native)
+def write_tiff(path: str, data: np.ndarray):
+    """
+    Write data to a TIFF file
 
-    # The scroll view is created after filling the list to make it the correct size
-    advanced_settings_scroll = QScrollArea()  # make scroll view
-    advanced_settings_scroll.setWidget(advanced_settings_form)  # apply scroll view to form
-    advanced_settings_gb.layout().addWidget(advanced_settings_scroll)  # add view to groupbox
-
-    return simple_settings_gb, advanced_settings_gb
+    Parameters
+    ----------
+    path : str
+        Path to save the file
+    data : np.ndarray
+        Data to save
+    """
+    tifffile.imwrite(path, data)
 
 
 class GeneralSetting(QGroupBox):
@@ -137,12 +117,12 @@ class GeneralSetting(QGroupBox):
             "sort_intensity",
             "device",
         ]
-        _settings = {k: self.build_widget(k) for k in BaSiC().settings.keys() if k not in skip}
+        self._settings = {k: self.build_widget(k) for k in BaSiC().settings.keys() if k not in skip}
 
         # sort settings into either simple or advanced settings containers
         # _settings = {**{"device": ComboBox(choices=["cpu", "cuda"])}, **_settings}
         i = 0
-        for k, v in _settings.items():
+        for k, v in self._settings.items():
             vbox.addWidget(QLabel(k), i, 0, 1, 1)
             vbox.addWidget(v.native, i, 1, 1, 1)
             i += 1
@@ -216,11 +196,11 @@ class AutotuneSetting(QGroupBox):
             "fourier_l0_norm_cost_coef": 30,
         }
 
-        _settings = {k: self.build_widget(k, _default[k]) for k in args}
+        self._settings = {k: self.build_widget(k, _default[k]) for k in args}
         # sort settings into either simple or advanced settings containers
         # _settings = {**{"device": ComboBox(choices=["cpu", "cuda"])}, **_settings}
         i = 0
-        for k, v in _settings.items():
+        for k, v in self._settings.items():
             vbox.addWidget(QLabel(k), i, 0, 1, 1)
             vbox.addWidget(v.native, i, 1, 1, 1)
             i += 1
@@ -336,34 +316,38 @@ class BasicWidget(QWidget):
         self.setLayout(QVBoxLayout())
         self.layout().addWidget(scroll_area)
 
-        # self.run_btn.clicked.connect(self._run)
+        self.run_fit_btn.clicked.connect(self._run_fit)
+        self.autotune_btn.clicked.connect(self._run_autotune)
+        self.run_transform_btn.clicked.connect(self._run_transform)
+        self.save_fit_btn.clicked.connect(self._save_fit)
+        self.save_transform_btn.clicked.connect(self._save_transform)
 
     def build_transform_widget_container(self):
         settings_container = QGroupBox("Parameters")  # make groupbox
         settings_layout = QGridLayout()
         label_timelapse = QLabel("is_timelapse:")
         label_timelapse.setFixedWidth(150)
-        self.checkbox_is_timelapse = QCheckBox()
-        self.checkbox_is_timelapse.setChecked(False)
+        self.checkbox_is_timelapse_transform = QCheckBox()
+        self.checkbox_is_timelapse_transform.setChecked(False)
 
         settings_layout.addWidget(label_timelapse, 0, 0)
-        settings_layout.addWidget(self.checkbox_is_timelapse, 0, 1)
+        settings_layout.addWidget(self.checkbox_is_timelapse_transform, 0, 1)
 
         settings_layout.setAlignment(Qt.AlignTop)
         settings_container.setLayout(settings_layout)
 
         inputs_container = self.build_transform_inputs_containers()
 
-        self.run_btn = QPushButton("Run")
-        self.cancel_btn = QPushButton("Cancel")
-        self.save_btn = QPushButton("Save")
+        self.run_transform_btn = QPushButton("Run")
+        self.cancel_transform_btn = QPushButton("Cancel")
+        self.save_transform_btn = QPushButton("Save")
 
         transform_layout = QGridLayout()
         transform_layout.addWidget(inputs_container, 0, 0, 1, 2)
         transform_layout.addWidget(settings_container, 1, 0, 1, 2)
-        transform_layout.addWidget(self.run_btn, 2, 0, 1, 1)
-        transform_layout.addWidget(self.cancel_btn, 2, 1, 1, 1)
-        transform_layout.addWidget(self.save_btn, 3, 0, 1, 2)
+        transform_layout.addWidget(self.run_transform_btn, 2, 0, 1, 1)
+        transform_layout.addWidget(self.cancel_transform_btn, 2, 1, 1, 1)
+        transform_layout.addWidget(self.save_transform_btn, 3, 0, 1, 2)
         transform_layout.setAlignment(Qt.AlignTop)
 
         transform_widget = QWidget()
@@ -399,17 +383,17 @@ class BasicWidget(QWidget):
         advanced_parameters_layout.addWidget(self.btn_autotune_settings)
         advanced_parameters_layout.addWidget(self.autotune_settings)
 
-        self.run_btn = QPushButton("Run")
-        self.cancel_btn = QPushButton("Cancel")
-        self.save_btn = QPushButton("Save")
+        self.run_fit_btn = QPushButton("Run")
+        self.cancel_fit_btn = QPushButton("Cancel")
+        self.save_fit_btn = QPushButton("Save")
 
         fit_layout = QGridLayout()
         fit_layout.addWidget(inputs_container, 0, 0, 1, 2)
         fit_layout.addWidget(settings_container, 1, 0, 1, 2)
         fit_layout.addWidget(advanced_parameters, 2, 0, 1, 2)
-        fit_layout.addWidget(self.run_btn, 3, 0, 1, 1)
-        fit_layout.addWidget(self.cancel_btn, 3, 1, 1, 1)
-        fit_layout.addWidget(self.save_btn, 4, 0, 1, 2)
+        fit_layout.addWidget(self.run_fit_btn, 3, 0, 1, 1)
+        fit_layout.addWidget(self.cancel_fit_btn, 3, 1, 1, 1)
+        fit_layout.addWidget(self.save_fit_btn, 4, 0, 1, 2)
         fit_layout.setAlignment(Qt.AlignTop)
         fit_widget = QWidget()
         fit_widget.setLayout(fit_layout)
@@ -426,17 +410,24 @@ class BasicWidget(QWidget):
         label_flatfield.setFixedWidth(150)
         label_darkfield = QLabel("darkfield:")
         label_darkfield.setFixedWidth(150)
+        label_weight = QLabel("Segmentation mask:")
+        label_weight.setFixedWidth(150)
 
-        self.image_select = ComboBox(choices=self.layers_image)
-        self.flatfield_select = ComboBox(choices=self.layers_image)
-        self.darkfield_select = ComboBox(choices=self.layers_weight)
+        self.transform_image_select = ComboBox(choices=self.layers_image_transform)
+        self.fit_weight_select = ComboBox(choices=self.layers_weight_transform)
+        self.fit_weight_select.enabled = False
+        self.checkbox_is_timelapse_transform.clicked.connect(self.toggle_weight_in_transform)
+        self.flatfield_select = ComboBox(choices=self.layers_image_flatfield)
+        self.darkfield_select = ComboBox(choices=self.layers_weight_darkfield)
 
         gb_layout.addWidget(label_image, 0, 0, 1, 1)
-        gb_layout.addWidget(self.image_select.native, 0, 1, 1, 2)
+        gb_layout.addWidget(self.transform_image_select.native, 0, 1, 1, 2)
         gb_layout.addWidget(label_flatfield, 1, 0, 1, 1)
         gb_layout.addWidget(self.flatfield_select.native, 1, 1, 1, 2)
         gb_layout.addWidget(label_darkfield, 2, 0, 1, 1)
         gb_layout.addWidget(self.darkfield_select.native, 2, 1, 1, 2)
+        gb_layout.addWidget(label_weight, 3, 0, 1, 1)
+        gb_layout.addWidget(self.fit_weight_select.native, 3, 1, 1, 2)
 
         gb_layout.setAlignment(Qt.AlignTop)
         input_gb.setLayout(gb_layout)
@@ -452,11 +443,11 @@ class BasicWidget(QWidget):
         label_fitting_weight = QLabel("segmentation mask:")
         label_fitting_weight.setFixedWidth(150)
 
-        self.image_select = ComboBox(choices=self.layers_image)
+        self.fit_image_select = ComboBox(choices=self.layers_image_fit)
         self.weight_select = ComboBox(choices=self.layers_weight)
 
         gb_layout.addWidget(label_image, 0, 0, 1, 1)
-        gb_layout.addWidget(self.image_select.native, 0, 1, 1, 2)
+        gb_layout.addWidget(self.fit_image_select.native, 0, 1, 1, 2)
         gb_layout.addWidget(label_fitting_weight, 1, 0, 1, 1)
         gb_layout.addWidget(self.weight_select.native, 1, 1, 1, 2)
 
@@ -485,6 +476,7 @@ class BasicWidget(QWidget):
         self.lineedit_smoothness_darkfield = QLineEdit()
         self.lineedit_smoothness_darkfield.setEnabled(False)
         self.lineedit_smoothness_darkfield.setText("Not available")
+        self.lineedit_smoothness_flatfield.setText("")
 
         self.autotune_btn = QPushButton("autotune")
         self.autotune_btn.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
@@ -537,6 +529,13 @@ class BasicWidget(QWidget):
             self.fit_widget.setVisible(True)
             self.transform_widget.setVisible(False)
 
+    def toggle_weight_in_transform(self, checked: bool):
+        # Switching the visibility of the fit_widget
+        if self.checkbox_is_timelapse_transform.isChecked():
+            self.fit_weight_select.enabled = True
+        else:
+            self.fit_weight_select.enabled = False
+
     def toggle_general_settings(self, checked: bool):
         # Switching the visibility of the General settings
         if self.general_settings.isVisible():
@@ -555,7 +554,31 @@ class BasicWidget(QWidget):
             self.autotune_settings.setVisible(True)
             self.btn_autotune_settings.setText("Hide autotune settings")
 
-    def layers_image(
+    def layers_image_fit(
+        self,
+        wdg: ComboBox,
+    ) -> list[Image]:
+        return ["--select input images--"] + [layer for layer in self.viewer.layers]
+
+    def layers_image_transform(
+        self,
+        wdg: ComboBox,
+    ) -> list[Image]:
+        return ["--select input images--"] + [layer for layer in self.viewer.layers]
+
+    def layers_weight_transform(
+        self,
+        wdg: ComboBox,
+    ) -> list[Image]:
+        return ["none"] + [layer for layer in self.viewer.layers]
+
+    def layers_weight_darkfield(
+        self,
+        wdg: ComboBox,
+    ) -> list[Image]:
+        return ["none"] + [layer for layer in self.viewer.layers]
+
+    def layers_image_flatfield(
         self,
         wdg: ComboBox,
     ) -> list[Image]:
@@ -572,42 +595,244 @@ class BasicWidget(QWidget):
         """Get settings for BaSiC."""
         return {k: v.value for k, v in self._settings.items()}
 
-    def _run(self):
+    def _run_autotune(self):
         # disable run button
-        self.run_btn.setDisabled(True)
+        self.autotune_btn.setDisabled(True)
         # get layer information
-        data, meta, _ = self.layer_select.value.as_layer_data_tuple()
+        data, meta, _ = self.fit_image_select.value.as_layer_data_tuple()
+
+        if self.weight_select.value == "none":
+            fitting_weight = None
+        else:
+            fitting_weight, meta_fitting_weight, _ = self.weight_select.value.as_layer_data_tuple()
 
         # define function to update napari viewer
         def update_layer(update):
-            data, flatfield, darkfield, meta = update
-            self.viewer.add_image(data, **meta)
-            self.viewer.add_image(flatfield)
-            if self._settings["get_darkfield"].value:
-                self.viewer.add_image(darkfield)
+            smoothness_flatfield, smoothness_darkfield = update
+            self.lineedit_smoothness_flatfield.setText(str(smoothness_flatfield))
+            if _settings["get_darkfield"]:
+                self.lineedit_smoothness_darkfield.setText(str(smoothness_darkfield))
+            print("Autotune is done.")
 
-        @thread_worker(start_thread=False, connect={"returned": update_layer})
-        def call_basic(data):
-            basic = BaSiC(**self.settings)
-            corrected = basic.fit_transform(data, timelapse=self._extrasettings["get_timelapse"].value)
+        @thread_worker(
+            start_thread=False,
+            # connect={"yielded": update_layer, "returned": update_layer},
+            connect={"returned": update_layer},
+        )
+        def call_autotune(data, fitting_weight, _settings, _settings_autotune):
+            basic = BaSiC(**_settings)
+            basic.autotune(
+                data,
+                is_timelapse=self.checkbox_is_timelapse.isChecked(),
+                fitting_weight=fitting_weight,
+                **_settings_autotune,
+            )
+            smoothness_flatfield = basic.smoothness_flatfield
+            smoothness_darkfield = basic.smoothness_darkfield
+            return smoothness_flatfield, smoothness_darkfield
+
+        _settings_tmp = self.general_settings._settings
+        _settings = {}
+        for key, item in _settings_tmp.items():
+            _settings[key] = item.value
+
+        _settings.update(
+            {
+                "get_darkfield": self.checkbox_get_darkfield.isChecked(),
+                "sort_intensity": self.checkbox_sorting.isChecked(),
+            }
+        )
+
+        _settings_autotune_tmp = self.autotune_settings._settings
+        _settings_autotune = {}
+        for key, item in _settings_autotune_tmp.items():
+            if key is not "histogram_bins":
+                _settings_autotune[key] = item.value
+            else:
+                _settings_autotune[key] = int(item.value)
+
+        worker = call_autotune(data, fitting_weight, _settings, _settings_autotune)
+        worker.finished.connect(lambda: self.autotune_btn.setDisabled(False))
+        worker.errored.connect(lambda: self.autotune_btn.setDisabled(False))
+        worker.start()
+        logger.info("Autotune worker started")
+        return worker
+
+    def _run_transform(self):
+        # disable run button
+        self.run_transform_btn.setDisabled(True)
+        # get layer information
+        try:
+            data, meta, _ = self.transform_image_select.value.as_layer_data_tuple()
+            flatfield, _, _ = self.flatfield_select.value.as_layer_data_tuple()
+            if self.darkfield_select.value == "none":
+                darkfield = np.zeros_like(flatfield)
+            else:
+                darkfield, _, _ = self.darkfield_select.value.as_layer_data_tuple()
+            if self.fit_weight_select.value == "none":
+                fitting_weight = None
+            else:
+                fitting_weight, meta_fitting_weight, _ = self.fit_weight_select.value.as_layer_data_tuple()
+        except:
+            logger.error("Error inputs.")
+            self.run_transform_btn.setDisabled(False)
+            return
+
+        # define function to update napari viewer
+        def update_layer(update):
+            data, meta = update
+            self.corrected = data
+            self.viewer.add_image(data, name="corrected")
+            print("Transform is done.")
+
+        @thread_worker(
+            start_thread=False,
+            # connect={"yielded": update_layer, "returned": update_layer},
+            connect={"returned": update_layer},
+        )
+        def call_basic(data, _settings):
+            basic = BaSiC()
+            basic.darkfield = np.asarray(darkfield)
+            basic.flatfield = np.asarray(flatfield)
+            corrected = basic.transform(
+                data,
+                **_settings,
+            )
+            self.run_transform_btn.setDisabled(False)  # reenable run button
+            return corrected, meta
+
+        _settings = {}
+        _settings["is_timelapse"] = self.checkbox_is_timelapse_transform.isChecked()
+        _settings["fitting_weight"] = fitting_weight
+        worker = call_basic(data, _settings)
+        self.cancel_transform_btn.clicked.connect(partial(self._cancel_transform, worker=worker))
+        worker.finished.connect(self.cancel_transform_btn.clicked.disconnect)
+        worker.finished.connect(lambda: self.run_transform_btn.setDisabled(False))
+        worker.errored.connect(lambda: self.run_transform_btn.setDisabled(False))
+        worker.start()
+        logger.info("BaSiC worker for tranform only started")
+        return worker
+
+    def _run_fit(self):
+        # disable run button
+        self.run_fit_btn.setDisabled(True)
+        # get layer information
+        try:
+            data, meta, _ = self.fit_image_select.value.as_layer_data_tuple()
+
+            if self.weight_select.value == "none":
+                fitting_weight = None
+            else:
+                fitting_weight, meta_fitting_weight, _ = self.weight_select.value.as_layer_data_tuple()
+        except:
+            logger.error("Error inputs.")
+            self.run_fit_btn.setDisabled(False)
+            return
+
+        # define function to update napari viewer
+        def update_layer(update):
+            data, flatfield, darkfield, _settings, meta = update
+            self.viewer.add_image(data, name="corrected")
+            self.viewer.add_image(flatfield, name="flatfield")
+            self.corrected = data
+            self.flatfield = flatfield
+            if _settings["get_darkfield"]:
+                self.viewer.add_image(darkfield, name="darkfield")
+                self.darkfield = darkfield
+            print("BaSiCPy fit is done.")
+
+        @thread_worker(
+            start_thread=False,
+            # connect={"yielded": update_layer, "returned": update_layer},
+            connect={"returned": update_layer},
+        )
+        def call_basic(data, fitting_weight, _settings):
+            basic = BaSiC(**_settings)
+            corrected = basic(data, is_timelapse=self.checkbox_is_timelapse.isChecked(), fitting_weight=fitting_weight)
             flatfield = basic.flatfield
             darkfield = basic.darkfield
-            self.run_btn.setDisabled(False)  # reenable run button
-            return corrected, flatfield, darkfield, meta
+            self.run_fit_btn.setDisabled(False)  # reenable run button
+            return corrected, flatfield, darkfield, _settings, meta
 
-        worker = call_basic(data)
-        self.cancel_btn.clicked.connect(partial(self._cancel, worker=worker))
-        worker.finished.connect(self.cancel_btn.clicked.disconnect)
-        worker.errored.connect(lambda: self.run_btn.setDisabled(False))
+        _settings_tmp = self.general_settings._settings
+        _settings = {}
+        for key, item in _settings_tmp.items():
+            _settings[key] = item.value
+
+        if self.lineedit_smoothness_flatfield.text() is not "":
+            try:
+                params_smoothness_flatfield = float(self.lineedit_smoothness_flatfield.text())
+                _settings.update({"smoothness_flatfield": params_smoothness_flatfield})
+            except:
+                logger.warning("Invalid smoothness_flatfield")
+        if self.lineedit_smoothness_darkfield.isEnabled():
+            try:
+                params_smoothness_darkfield = float(self.lineedit_smoothness_darkfield.text())
+                _settings.update({"smoothness_darkfield": params_smoothness_darkfield})
+            except:
+                logger.warning("Invalid smoothness_darkfield")
+
+        _settings.update(
+            {
+                "get_darkfield": self.checkbox_get_darkfield.isChecked(),
+                "sort_intensity": self.checkbox_sorting.isChecked(),
+            }
+        )
+        worker = call_basic(data, fitting_weight, _settings)
+        self.cancel_fit_btn.clicked.connect(partial(self._cancel_fit, worker=worker))
+        worker.finished.connect(self.cancel_fit_btn.clicked.disconnect)
+        worker.finished.connect(lambda: self.run_fit_btn.setDisabled(False))
+        worker.errored.connect(lambda: self.run_fit_btn.setDisabled(False))
         worker.start()
         logger.info("BaSiC worker started")
         return worker
 
-    def _cancel(self, worker):
+    def _cancel_fit(self, worker):
         logger.info("Cancel requested")
         worker.quit()
         # enable run button
-        worker.finished.connect(lambda: self.run_btn.setDisabled(False))
+        worker.finished.connect(lambda: self.run_fit_btn.setDisabled(False))
+
+    def _cancel_transform(self, worker):
+        logger.info("Cancel requested")
+        worker.quit()
+        # enable run button
+        worker.finished.connect(lambda: self.run_transform_btn.setDisabled(False))
+
+    def _save_fit(self):
+        try:
+            filepath = save_dialog(self, "corrected_image")
+            data = np.clip(self.corrected, 0, 65535).astype(np.uint16)
+            write_tiff(filepath, data)
+        except:
+            self.logger.info("Corrected image is not found.")
+        try:
+            filepath = save_dialog(self, "flatfield")
+            data = self.flatfield.astype(np.float32)
+            write_tiff(filepath, data)
+        except:
+            self.logger.info("Flatfield is not found.")
+        if self.checkbox_get_darkfield.isChecked():
+            try:
+                filepath = save_dialog(self, "darkfield")
+                data = self.darkfield.astype(np.float32)
+                write_tiff(filepath, data)
+            except:
+                self.logger.info("Darkfield is not found.")
+        else:
+            pass
+        print("Saving is done.")
+        return
+
+    def _save_transform(self):
+        try:
+            filepath = save_dialog(self, "corrected_image")
+            data = np.clip(self.corrected, 0, 65535).astype(np.uint16)
+            write_tiff(filepath, data)
+        except:
+            self.logger.info("Corrected image is not found.")
+        print("Saving is done.")
+        return
 
     def showEvent(self, event: QEvent) -> None:  # noqa: D102
         super().showEvent(event)
@@ -615,15 +840,29 @@ class BasicWidget(QWidget):
 
     def reset_choices(self, event: Optional[QEvent] = None) -> None:
         """Repopulate image layer dropdown list."""  # noqa DAR101
-        self.image_select.reset_choices(event)
+        self.fit_image_select.reset_choices(event)
+        self.transform_image_select.reset_choices(event)
+        self.flatfield_select.reset_choices(event)
+        self.darkfield_select.reset_choices(event)
+
         self.weight_select.reset_choices(event)
-        # If no layers are present, disable the 'run' button
-        if len(self.image_select) <= 1:
-            self.run_btn.setEnabled(False)
-            self.autotune_btn.setEnabled(False)
-        else:
-            self.run_btn.setEnabled(True)
-            self.autotune_btn.setEnabled(True)
+
+        # # If no layers are present, disable the 'run' button
+        # print(self.fit_image_select.value)
+        # print(self.fit_image_select.value is "--select input images--")
+        # if self.fit_image_select.value is "--select input images--":
+        #     self.run_fit_btn.setEnabled(False)
+        #     self.autotune_btn.setEnabled(False)
+        # else:
+        #     self.run_fit_btn.setEnabled(True)
+        #     self.autotune_btn.setEnabled(True)
+
+        # if (self.transform_image_select.value is "--select input images--") and (
+        #     self.flatfield_select.value is "--select input images--"
+        # ):
+        #     self.run_transform_btn.setEnabled(False)
+        # else:
+        #     self.run_transform_btn.setEnabled(True)
 
 
 class QScientificDoubleSpinBox(QDoubleSpinBox):
